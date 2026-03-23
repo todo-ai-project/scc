@@ -1,19 +1,33 @@
 const express = require('express');
+const dotenv = require('dotenv');
+const goalRouter = require('./routes/goal'); // 작성하신 goal.js 불러오기
+const todoRouter = require('./routes/todo'); // todo.js도 있다면 연결
+
+// .env 파일의 환경 변수 로드
+dotenv.config();
+
 const app = express();
-const todoRouter = require('./routes/todo'); // 1단계에서 만든 파일 불러오기
 
-// 설정: JSON 데이터를 읽을 수 있게 함
-app.use(express.json());
+// 중요: JSON 형태의 데이터를 받기 위한 미들웨어
+app.use(express.json()); 
 
-// 주소 연결: 모든 할 일 관련 요청은 /api/todo 로 들어오게 설정
-app.use('/api/todo', todoRouter);
+// 라우터 경로 설정
+// 브라우저나 포스트맨에서 http://localhost:3000/api/goals 로 접근하게 됩니다.
+app.use('/api/goals', goalRouter);
+app.use('/api/todos', todoRouter);
 
-// 서버 상태 확인용 (브라우저에서 localhost:3000 접속 시 확인 가능)
+// 기본 접속 테스트용
 app.get('/', (req, res) => {
-    res.json({ status: "running" });
+    res.send('Backend Server is Running!');
 });
 
-const PORT = 3000;
+// 포트 번호 설정 (기본값 3000)
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-    console.log(`[INFO] Server is listening on port ${PORT}...`);
+    console.log('==========================================');
+    console.log(`🚀 서버가 성공적으로 시작되었습니다!`);
+    console.log(`📡 접속 주소: http://localhost:${PORT}`);
+    console.log(`📝 목표 설정 API: http://localhost:${PORT}/api/goals`);
+    console.log('==========================================');
 });
