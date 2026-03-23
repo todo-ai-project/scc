@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // EvidenceList.module.scss
 
 // Variables
@@ -153,3 +154,6 @@ $card-min-height: 250px;
         grid-template-columns: repeat(2, 1fr); 
     }
 }
+=======
+# scc
+>>>>>>> 6722ef045707c726e05e56e6609828b375e95db6
