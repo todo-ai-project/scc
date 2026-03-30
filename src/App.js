@@ -1,32 +1,43 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import './App.css'; // 스타일링은 여기서!
+//import './App.css';
+import AnalyzePage from './AnalyzePage'; 
+
 
 function App() {
-  // 1. 입력값을 저장할 상태(State) 생성
   const [goal, setGoal] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false); 
+  const [isLoading, setIsLoading] = useState(false);     
+  const [result, setResult] = useState(null);           
 
-  // 2. 버튼 클릭 시 실행될 함수
-  const handleSubmit = async () => {
+  // 이 함수 하나만 있어야 합니다!
+  const handleSubmit = () => { 
     if (!goal) {
       alert("할 일을 입력해주세요!");
       return;
     }
 
-    try {
-      // 3. axios.post를 사용하여 백엔드로 데이터 전송
-      // URL('/api/goals' 등)은 실제 백엔드 주소로 바꿔주세요.
-      const response = await axios.post('http://localhost:8080/api/goals', {
-        title: goal
-      });
+    console.log("버튼 클릭됨! 이제 화면을 바꿉니다.");
 
-      console.log("전송 성공:", response.data);
-      alert("성공적으로 생성되었습니다!");
-    } catch (error) {
-      console.error("전송 실패:", error);
-      alert("데이터 전송 중 오류가 발생했습니다.");
-    }
+    setIsAnalyzing(true); 
+    setIsLoading(true);
+
+    setTimeout(() => {
+      console.log("3초 지남! 로딩 끝!");
+      setIsLoading(false);
+      setResult({ message: "가짜 데이터 로딩 성공!" }); 
+    }, 3000);
   };
+
+  if (isAnalyzing) {
+    return (
+      <AnalyzePage 
+        goal={goal} 
+        result={result} 
+        isLoading={isLoading} 
+        onBack={() => setIsAnalyzing(false)} 
+      />
+    );
+  }
 
   return (
     <div style={{ textAlign: 'center', marginTop: '100px' }}>
@@ -34,18 +45,16 @@ function App() {
       <h1>목표 설정하기</h1>
       <p style={{ color: 'gray' }}>하나의 목표를 입력하면,<br/>AI가 실행 가능한 할 일을 만들어드려요</p>
 
-      {/* 입력창 (Input) */}
       <input 
         type="text" 
         placeholder="새로운 할 일을 입력해보세요"
         value={goal}
-        onChange={(e) => setGoal(e.target.value)} // 입력할 때마다 상태 업데이트
+        onChange={(e) => setGoal(e.target.value)}
         style={inputStyle}
       />
 
       <br />
 
-      {/* 제출 버튼 (Button) */}
       <button onClick={handleSubmit} style={buttonStyle}>
         ✨ AI로 할 일을 생성해요
       </button>
@@ -57,7 +66,6 @@ function App() {
   );
 }
 
-// 간단한 스타일 객체 (App.css에 작성해도 됩니다)
 const inputStyle = {
   width: '400px',
   padding: '15px',
@@ -72,7 +80,7 @@ const buttonStyle = {
   padding: '15px',
   borderRadius: '10px',
   border: 'none',
-  backgroundColor: '#ccc', // 이미지처럼 회색 톤
+  backgroundColor: '#ccc',
   color: 'white',
   fontSize: '16px',
   cursor: 'pointer'
