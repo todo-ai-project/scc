@@ -1,55 +1,84 @@
 //frontend>src>pages>TodoList>TodoList.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import TodoItem from './TodoItem';
 
-function TodoList({ todos: initialTodos = [] }) {
+function TodoList() {
   const navigate = useNavigate();
-  
-  // 상태 관리
+
   const [todos, setTodos] = useState([]);
+  const [goals, setGoals] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [dueDate, setDueDate] = useState(''); 
+  const [dueDate, setDueDate] = useState('');
+  const [activeGoalID, setActiveGoalID] = useState('all');
+  const [addGoalID, setAddGoalID] = useState('');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIDs, setSelectedIDs] = useState(new Set());
 
-  // ⭐️ 데이터 불러오기 (컴포넌트 로드 시 실행)
-  useEffect(() => {
-    const fetchTodos = async () => {
-      try {
-        const response = await axios.get('http://localhost:5001/api/todos');
-        if (response.data.success) {
-          // 백엔드 데이터 필드(content)를 프론트엔드 필드(text)로 변환하여 저장
-          const mappedTodos = response.data.data.map(item => ({
-            id: item.id,
-            text: item.content,
-            targetDate: item.targetDate || "",
-            completed: item.isDone || false,
-            highlighted: false
-          }));
-          setTodos(mappedTodos);
-        }
-      } catch (error) {
-        console.error("데이터 불러오기 실패:", error);
+  const API_URL = 'http://localhost:5001/api/todos';
+  const GOALS_API_URL = 'http://localhost:5001/api/goals';
+  const CURRENT_USER_ID = "test_user_1";
+
+  const fetchTodos = useCallback(async () => {
+    try {
+      const response = await axios.get(API_URL, {
+        params: { userID: CURRENT_USER_ID }
+      });
+      if (response.data.success) {
+        const mappedTodos = response.data.data.map(item => ({
+          id: item.id,
+          text: item.content || "내용 없음",
+          targetDate: item.targetDate || "",
+          completed: item.isDone || false,
+          goalID: item.goalID || "",
+          goalName: item.goalName || "",
+          highlighted: false
+        }));
+        setTodos(mappedTodos);
       }
-    };
+    } catch (error) {
+      console.error("데이터 로드 실패:", error);
+    }
+  }, [API_URL]);
+
+  const fetchGoals = useCallback(async () => {
+    try {
+      const response = await axios.get(GOALS_API_URL);
+      if (response.data.success) {
+        setGoals(response.data.data);
+      }
+    } catch (error) {
+      console.error("목표 로드 실패:", error);
+    }
+  }, [GOALS_API_URL]);
+
+  useEffect(() => {
     fetchTodos();
-  }, []);
+    fetchGoals();
+  }, [fetchTodos, fetchGoals]);
 
-  // 오늘 날짜 정보
+  // goals API에서 가져온 데이터로 탭 생성 (정확한 ID-이름 매핑)
+  const goalMap = {};
+  goals.forEach(g => {
+    goalMap[g.id] = g.goalName || g.id;
+  });
+  const goalTabs = goals
+    .filter(g => todos.some(t => t.goalID === g.id))
+    .map(g => ({ id: g.id, name: g.goalName || g.id }));
+
   const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const date = String(today.getDate()).padStart(2, '0');
-  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-  const day = dayNames[today.getDay()]; 
-  const formattedDate = `${year}.${month}.${date}(${day})`;
+  const formattedDate = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}(${['일', '월', '화', '수', '목', '금', '토'][today.getDay()]})`;
 
-  const completedCount = todos.filter(todo => todo.completed).length; 
-  const remainingCount = todos.length - completedCount; 
+  // 현재 선택된 탭 기준 카운트
+  const currentTodos = activeGoalID === 'all'
+    ? todos
+    : todos.filter(todo => todo.goalID === activeGoalID);
+  const completedCount = currentTodos.filter(todo => todo.completed).length;
+  const remainingCount = currentTodos.length - completedCount;
 
-  // D-Day 계산 함수 (기존 로직 유지)
   const calculateDDay = (targetDateString) => {
-    if (!targetDateString) return '마감일 없음';
+    if (!targetDateString) return null;
     const currentDate = new Date();
     currentDate.setHours(0, 0, 0, 0);
     const targetDate = new Date(targetDateString);
@@ -57,199 +86,277 @@ function TodoList({ todos: initialTodos = [] }) {
     const diffTime = targetDate.getTime() - currentDate.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return 'D-Day';
-    if (diffDays > 0) return `D-${diffDays}`;
-    return `D+${Math.abs(diffDays)}`;
+    return diffDays > 0 ? `D-${diffDays}` : `D+${Math.abs(diffDays)}`;
   };
 
-  // ⭐️ 삭제 로직 (DB 실시간 반영)
   const handleDelete = async (id) => {
-    if (!window.confirm("정말 이 할 일을 삭제할까요?")) return;
-
     try {
-      const response = await axios.delete(`http://localhost:5000/api/todos/${id}`);
-      if (response.data.success) {
-        // DB 삭제 성공 시에만 화면에서 필터링
-        setTodos(todos.filter(todo => todo.id !== id));
-      }
+      await axios.delete(`${API_URL}/${id}`);
+      setTodos(prev => prev.filter(todo => todo.id !== id));
     } catch (error) {
-      console.error("삭제 실패:", error);
-      alert("삭제 중 오류가 발생했습니다.");
+      alert("삭제 실패");
     }
   };
 
-  const handleUpdate = (id, newText, newDate) => {
-    setTodos(todos.map(todo => 
-      todo.id === id ? { ...todo, text: newText, targetDate: newDate } : todo
-    ));
+  const handleToggle = async (id) => {
+    const targetTodo = todos.find(todo => todo.id === id);
+    try {
+      await axios.patch(`${API_URL}/${id}`, {
+        isDone: !targetTodo.completed
+      });
+      setTodos(prev => prev.map(todo =>
+        todo.id === id ? { ...todo, completed: !todo.completed } : todo
+      ));
+    } catch (error) {
+      console.error("상태 변경 실패");
+    }
   };
 
-  const handleToggle = (id) => {
-    setTodos(todos.map(todo =>
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
+  const handleUpdate = async (id, newContent, newDate) => {
+    try {
+      await axios.patch(`${API_URL}/${id}`, {
+        content: newContent,
+        targetDate: newDate || ""
+      });
+      setTodos(prev => prev.map(todo =>
+        todo.id === id ? { ...todo, text: newContent, targetDate: newDate || "" } : todo
+      ));
+    } catch (error) {
+      alert("수정 실패");
+    }
+  };
+
+  const getTargetGoalID = () => {
+    if (activeGoalID !== 'all') return activeGoalID;
+    return addGoalID;
   };
 
   const handleAddTodo = async () => {
-    if (inputValue.trim() === '') return;
-    
+    if (!inputValue.trim()) return;
+
+    const targetGoalID = getTargetGoalID();
+
+    if (!targetGoalID) {
+      alert("대목표를 선택해주세요.");
+      return;
+    }
+
+    const targetGoalName = goalMap[targetGoalID] || "";
+    console.log("추가 대상 goalID:", targetGoalID, "goalName:", targetGoalName, "activeGoalID:", activeGoalID);
+
     try {
-      // ⭐️ 수동 추가 시에도 DB에 저장
-      const response = await axios.post('http://localhost:5000/api/todos', {
+      const response = await axios.post(API_URL, {
         content: inputValue,
         targetDate: dueDate,
-        userID: "test_user_1"
+        goalID: targetGoalID,
+        goalName: targetGoalName,
+        userID: CURRENT_USER_ID
       });
-
       if (response.data.success) {
-        const newTodo = {
-          id: response.data.id, // DB에서 생성된 실제 ID 사용
-          text: inputValue,
-          targetDate: dueDate, 
-          completed: false,
-          highlighted: false,
-        };
-        setTodos([newTodo, ...todos]); 
-        setInputValue(''); 
-        setDueDate(''); 
+        fetchTodos();
+        fetchGoals();
+        setInputValue('');
+        setDueDate('');
+        setAddGoalID('');
       }
     } catch (error) {
-      alert("할 일을 저장하지 못했습니다.");
+      alert("저장 실패");
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleAddTodo();
-  };
+  // 현재 선택된 목표의 할 일만 필터링
+  const filteredTodos = activeGoalID === 'all'
+    ? todos
+    : todos.filter(todo => todo.goalID === activeGoalID);
 
-  // ⭐️ 정렬 로직 (기존 로직 유지)
-  const sortedTodos = [...todos].sort((a, b) => {
+  const sortedTodos = [...filteredTodos].sort((a, b) => {
     if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    if (!a.targetDate && !b.targetDate) return 0;
     if (!a.targetDate) return 1;
     if (!b.targetDate) return -1;
     return new Date(a.targetDate) - new Date(b.targetDate);
   });
 
+  const handleSelect = (id) => {
+    setSelectedIDs(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIDs.size === sortedTodos.length) {
+      setSelectedIDs(new Set());
+    } else {
+      setSelectedIDs(new Set(sortedTodos.map(t => t.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIDs.size === 0) return;
+    if (!window.confirm(`${selectedIDs.size}개의 할 일을 삭제하시겠습니까?`)) return;
+    try {
+      await Promise.all([...selectedIDs].map(id => axios.delete(`${API_URL}/${id}`)));
+      setTodos(prev => prev.filter(todo => !selectedIDs.has(todo.id)));
+      setSelectedIDs(new Set());
+      setSelectMode(false);
+    } catch (error) {
+      alert("일부 삭제에 실패했습니다.");
+    }
+  };
+
   return (
-    <div style={{ 
-      backgroundColor: '#FBFAF9', 
-      minHeight: '100vh', 
-      width: '100%', 
-      padding: '60px 8%', 
-      boxSizing: 'border-box',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      
+    <div style={{ backgroundColor: '#FBFAF9', minHeight: '100vh', width: '100%', padding: '60px 8%', boxSizing: 'border-box' }}>
+
       <div style={{ textAlign: 'left', marginBottom: '20px' }}>
-        <button 
-          onClick={() => navigate('/')} 
-          style={{ 
-            padding: '10px 15px', 
-            borderRadius: '8px', 
-            border: 'none', 
-            backgroundColor: '#eee', 
+        <button onClick={() => navigate('/')} style={{ padding: '10px 15px', borderRadius: '8px', border: 'none', backgroundColor: '#eee', cursor: 'pointer' }}>홈으로</button>
+      </div>
+
+      <div style={{ marginBottom: '40px' }}>
+        <p style={{ color: '#bbb', fontWeight: '600' }}>{formattedDate}</p>
+        <h1 style={{ fontSize: '48px', fontWeight: '800' }}>To-Do</h1>
+        <p style={{ color: '#999', fontSize: '18px' }}>{remainingCount}개 남음 · {completedCount}개 완료</p>
+      </div>
+
+      {/* 대목표 탭 버튼 */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        {/* 전체 탭 */}
+        <button
+          onClick={() => { setActiveGoalID('all'); setSelectMode(false); setSelectedIDs(new Set()); }}
+          style={{
+            padding: '12px 24px',
+            borderRadius: '30px',
+            border: activeGoalID === 'all' ? '2px solid #aa3bff' : '2px solid #eee',
+            backgroundColor: activeGoalID === 'all' ? '#aa3bff' : 'white',
+            color: activeGoalID === 'all' ? 'white' : '#555',
+            fontSize: '15px',
+            fontWeight: '600',
             cursor: 'pointer',
-            fontWeight: 'bold',
-            color: '#333'
+            transition: 'all 0.2s'
           }}
         >
-          홈으로
+          전체
         </button>
-      </div>
-
-      <div style={{ flexShrink: 0 }}> 
-        <div style={{ marginBottom: '40px', textAlign: 'left', position: 'relative' }}>
-          <p style={{ margin: '0 0 8px', fontSize: '16px', color: '#bbb', fontWeight: '600' }}>{formattedDate}</p>
-          <h1 style={{ margin: 0, fontSize: '48px', fontWeight: '800', color: '#111' }}>To-Do</h1>
-          <p style={{ margin: '12px 0 0', fontSize: '18px', color: '#999', fontWeight: '500' }}>
-            {remainingCount}개 남음 · {completedCount}개 완료
-          </p>
-        </div>
-
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: '1fr 1fr', 
-          gap: '20px', 
-          marginBottom: '30px' 
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 24px',
-            border: '2px solid #ddd', 
-            borderRadius: '16px',
-            backgroundColor: 'white',
-            boxSizing: 'border-box',
-            gap: '10px'
-          }}>
-            <input 
-              type="text" 
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="새로운 목표를 추가해보세요" 
+        {goalTabs.map(g => {
+          const isActive = activeGoalID === g.id;
+          const gTodos = todos.filter(t => t.goalID === g.id);
+          const gDone = gTodos.filter(t => t.completed).length;
+          const gRemain = gTodos.length - gDone;
+          return (
+            <button
+              key={g.id}
+              onClick={() => { console.log("탭 클릭:", g.id, g.name); setActiveGoalID(g.id); setSelectMode(false); setSelectedIDs(new Set()); }}
               style={{
-                border: 'none',
-                outline: 'none',
-                fontSize: '16px', 
-                fontWeight: '500',
-                flexGrow: 1,
-                backgroundColor: 'transparent'
-              }}
-            />
-            <input 
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              style={{
-                border: 'none',
-                outline: 'none',
-                fontSize: '14px',
-                color: '#777',
+                padding: '12px 24px',
+                borderRadius: '30px',
+                border: isActive ? '2px solid #aa3bff' : '2px solid #eee',
+                backgroundColor: isActive ? '#aa3bff' : 'white',
+                color: isActive ? 'white' : '#555',
+                fontSize: '15px',
+                fontWeight: '600',
                 cursor: 'pointer',
-                backgroundColor: 'transparent'
-              }}
-            />
-            <button 
-              onClick={handleAddTodo}
-              style={{
-                width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#ccc', color: 'white', border: 'none', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}
             >
-              +
+              {g.name}
+              <span style={{ fontSize: '12px', opacity: 0.8 }}>({gRemain}/{gTodos.length})</span>
             </button>
-          </div>
-          <div></div> 
-        </div>
+          );
+        })}
       </div>
-      
-      <div style={{ 
-        display: 'grid',               
-        gridTemplateColumns: '1fr 1fr', 
-        gridAutoRows: 'min-content', 
-        alignContent: 'start',       
-        gap: '20px',                   
-        width: '100%',
-        overflowY: 'auto', 
-        paddingRight: '10px', 
-        flexGrow: 1, 
-      }}>
-        {sortedTodos.map((todo) => (
-          <TodoItem 
-            key={todo.id} 
-            id={todo.id}          
-            text={todo.text} 
-            targetDate={todo.targetDate}
-            dDay={calculateDDay(todo.targetDate)} 
-            completed={todo.completed} 
-            highlighted={todo.highlighted} 
-            onDelete={handleDelete} 
-            onUpdate={handleUpdate} 
-            onToggle={handleToggle}
-          />
-        ))}
+
+      {/* 할 일 추가 영역 */}
+      <div style={{ display: 'flex', padding: '16px 24px', border: '2px solid #ddd', borderRadius: '16px', backgroundColor: 'white', gap: '10px', marginBottom: '30px', alignItems: 'center' }}>
+        {activeGoalID === 'all' && goalTabs.length > 0 && (
+          <select
+            value={addGoalID}
+            onChange={(e) => setAddGoalID(e.target.value)}
+            style={{ border: '1px solid #ddd', borderRadius: '8px', padding: '8px 10px', fontSize: '14px', color: '#555' }}
+          >
+            <option value="">대목표 선택</option>
+            {goalTabs.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        )}
+        <input
+          type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAddTodo()}
+          placeholder="할 일을 입력하세요"
+          style={{ border: 'none', outline: 'none', flexGrow: 1, fontSize: '15px' }}
+        />
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={{ border: 'none' }} />
+        <button onClick={handleAddTodo} style={{ borderRadius: '50%', width: '30px', height: '30px', border: 'none', backgroundColor: '#aa3bff', color: 'white', cursor: 'pointer', fontWeight: '700', fontSize: '16px' }}>+</button>
+      </div>
+
+      {/* 선택 삭제 버튼 (할 일 목록 바로 위, 오른쪽 정렬) */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', justifyContent: 'flex-end' }}>
+        <button
+          onClick={() => { setSelectMode(!selectMode); setSelectedIDs(new Set()); }}
+          style={{
+            padding: '6px 14px',
+            borderRadius: '8px',
+            border: selectMode ? '2px solid #e74c3c' : '1px solid #ddd',
+            backgroundColor: selectMode ? '#fdf0ef' : 'white',
+            color: selectMode ? '#e74c3c' : '#999',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer'
+          }}
+        >
+          {selectMode ? '선택 취소' : '선택 삭제'}
+        </button>
+        {selectMode && (
+          <>
+            <button
+              onClick={handleSelectAll}
+              style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: 'white', color: '#555', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+            >
+              {selectedIDs.size === sortedTodos.length ? '전체 해제' : '전체 선택'}
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={selectedIDs.size === 0}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: selectedIDs.size > 0 ? '#e74c3c' : '#ccc',
+                color: 'white',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: selectedIDs.size > 0 ? 'pointer' : 'default'
+              }}
+            >
+              {selectedIDs.size}개 삭제
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* 선택된 목표의 세부 할 일 목록 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        {sortedTodos.length > 0 ? (
+          sortedTodos.map((todo) => (
+            <TodoItem
+              key={todo.id}
+              {...todo}
+              dDay={calculateDDay(todo.targetDate)}
+              onDelete={handleDelete}
+              onToggle={handleToggle}
+              onUpdate={handleUpdate}
+              selectMode={selectMode}
+              isSelected={selectedIDs.has(todo.id)}
+              onSelect={handleSelect}
+            />
+          ))
+        ) : (
+          <p style={{ color: '#aaa' }}>아직 할 일이 없습니다. 목표를 생성해 보세요!</p>
+        )}
       </div>
     </div>
   );

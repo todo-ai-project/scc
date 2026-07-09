@@ -1,7 +1,7 @@
 //frontend>src>pages>TodoList>TodoItem.jsx
 import { useState } from 'react';
 
-function TodoItem({ id, text, targetDate, dDay, completed, highlighted, onDelete, onUpdate, onToggle }) {
+function TodoItem({ id, text, targetDate, dDay, completed, highlighted, onDelete, onUpdate, onToggle, selectMode, isSelected, onSelect }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(text);
   const [editDate, setEditDate] = useState(targetDate); // 수정용 날짜 상태
@@ -44,10 +44,36 @@ function TodoItem({ id, text, targetDate, dDay, completed, highlighted, onDelete
       transition: 'all 0.2s ease'
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px', flexGrow: 1 }}>
-        
+
+        {/* 선택 모드일 때 선택 체크박스 */}
+        {selectMode && (
+          <div
+            onClick={() => onSelect(id)}
+            style={{
+              width: '22px',
+              height: '22px',
+              border: isSelected ? '2px solid #e74c3c' : '2px solid #ccc',
+              borderRadius: '4px',
+              backgroundColor: isSelected ? '#e74c3c' : 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              marginTop: '2px',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            {isSelected && '✓'}
+          </div>
+        )}
+
         {/* ⭐️ 체크박스 (클릭 시 완료 토글) */}
-        <div 
-          onClick={() => onToggle(id)} // 부모의 토글 함수 호출
+        <div
+          onClick={() => onToggle(id)}
           style={{ 
             width: '24px', 
             height: '24px', 
@@ -115,8 +141,8 @@ function TodoItem({ id, text, targetDate, dDay, completed, highlighted, onDelete
             </p>
           )}
           
-          {/* 디데이 표시 (수정 중이 아닐 때만 표시) */}
-          {!isEditing && (
+          {/* 디데이 표시 (수정 중이 아니고, 디데이가 있을 때만 표시) */}
+          {!isEditing && dDay && (
             <p style={{ margin: 0, fontSize: '13px', color: '#888', fontWeight: '500' }}>
               {dDay}
             </p>

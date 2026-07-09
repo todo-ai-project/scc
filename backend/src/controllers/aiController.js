@@ -1,4 +1,5 @@
-const model = require('../config/gemini'); // ⭐️ 중괄호 없이 정확히 호출
+//backend>src>controllers>aiController.js
+const model = require('../config/gemini'); 
 const { db } = require('../config/firebase');
 
 exports.generateTodoMate = async (req, res) => {
@@ -12,86 +13,111 @@ exports.generateTodoMate = async (req, res) => {
             });
         }
 
-        console.log(`[AI 요청 시작] 목표: ${userGoal}`);
+        console.log(`\n🚀 [AI 요청 시작] 사용자: ${userID || 'test_user_1'} | 목표: ${userGoal}`);
 
         const prompt = `
-너는 10년 경력의 베테랑 목표 달성 코치야. 
-사용자의 목표 "${userGoal}"을 분석하여 30일 안에 반드시 성공할 수 있는 최적의 9단계 액션 플랜을 설계하라.
-
-[미션: 마감 기한 중심 TODO 리스트 생성]
-1. 구조 (카테고리별 3개씩, 총 9개):
-   - learning_plan: 전략 수립 및 지식 습득
-   - practical_goals: 직접적인 핵심 실행 행동
-   - environment_setup: 지속 가능한 시스템 구축
-
-2. 필수 형식:
-   - 각 항목은 반드시 "D-숫자: 할 일 내용" 형식을 지킬 것.
-   - 숫자는 30부터 1까지 논리적 순서로 배치.
-   - 모든 문장은 한국어 명사형 종결 (~하기, ~설정, ~완료).
-   - 각 문장은 공백 포함 25자 이내.
-
-[출력 제한]
-- 반드시 아래 예시와 같은 순수 JSON 데이터만 출력하라. 
-- 마크다운 기호를 포함하지 마라.
+너는 10년 경력의 목표 달성 코치야. 사용자의 목표 "${userGoal}"을 분석해 30일 액션 플랜을 짜라.
+반드시 아래 JSON 형식으로만 응답하고, 마크다운 태그(\`\`\`json)는 절대 포함하지 마라.
 
 {
-  "learning_plan": ["D-30: 목표 구체화 및 자료 수집", "D-25: 핵심 전략 로드맵 작성", "D-20: 필요 도구 및 강의 선별"],
-  "practical_goals": ["D-15: 매일 1시간 집중 실행하기", "D-10: 중간 점검 및 피드백 반영", "D-5: 최종 결과물 초안 완성"],
-  "environment_setup": ["D-30: 방해 요소 제거 및 환경 정리", "D-15: 스터디 그룹 또는 커뮤니티 가입", "D-1: 최종 성과 공유 및 보상 부여"]
+  "learning_plan": ["D-30: 내용", "D-25: 내용", "D-20: 내용"],
+  "practical_goals": ["D-15: 내용", "D-10: 내용", "D-5: 내용"],
+  "environment_setup": ["D-30: 내용", "D-15: 내용", "D-1: 내용"]
 }
         `;
 
-        // ⭐️ model이 정상적으로 로드되었다면 여기서 함수가 실행됩니다.
+        // 1. AI 응답 생성
         const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const responseText = response.text().trim();
+        const response = result.response;
+        let responseText = response.text().trim();
         
-        console.log("📩 Gemini 응답 수신 완료");
+        console.log("📩 AI로부터 응답을 받았습니다.");
 
+        // 2. JSON 데이터 추출 (더 강력한 정규식 처리)
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            throw new Error("AI 응답에서 유효한 JSON 형식을 찾을 수 없습니다.");
+            console.error("❌ AI 응답 형식이 잘못되었습니다:", responseText);
+            throw new Error("AI 응답에서 JSON 데이터를 추출할 수 없습니다.");
         }
         
         const parsedData = JSON.parse(jsonMatch[0]);
 
+        // 3. Firestore Batch 작업 준비
         const batch = db.batch();
         const categories = ['learning_plan', 'practical_goals', 'environment_setup'];
         const savedTodos = [];
+        const currentGoalID = goalID || `goal_${Date.now()}`;
 
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // 대목표(Goal) 저장
+        const goalRef = db.collection('goals').doc(currentGoalID);
+        batch.set(goalRef, {
+            goalName: userGoal,
+            userID: userID || "test_user_1",
+            createdAt: new Date()
+        });
+
+        // 데이터 가공 및 Batch 추가
         categories.forEach(cat => {
             if (parsedData[cat] && Array.isArray(parsedData[cat])) {
                 parsedData[cat].forEach((taskContent, index) => {
+                    // D-Day 숫자 추출
+                    const dDayMatch = taskContent.match(/D-(\d+)/);
+                    let targetDate = "";
+                    
+                    if (dDayMatch) {
+                        const daysBefore = parseInt(dDayMatch[1]);
+                        const calculatedDate = new Date(today);
+                        calculatedDate.setDate(today.getDate() + (30 - daysBefore));
+                        const y = calculatedDate.getFullYear();
+                        const m = String(calculatedDate.getMonth() + 1).padStart(2, '0');
+                        const d = String(calculatedDate.getDate()).padStart(2, '0');
+                        targetDate = `${y}-${m}-${d}`;
+                    }
+
+                    const cleanContent = taskContent.replace(/^D-\d+:\s*/, '');
                     const todoRef = db.collection('todos').doc();
                     const todoData = {
-                        content: taskContent,
+                        content: cleanContent,
                         category: cat,
-                        goalID: goalID || "ai_generated_goal",
+                        goalID: currentGoalID,
+                        goalName: userGoal,
                         userID: userID || "test_user_1",
                         isDone: false,
+                        targetDate: targetDate,
                         order: index,
-                        createdAt: new Date()
+                        createdAt: new Date() 
                     };
+                    
                     batch.set(todoRef, todoData);
                     savedTodos.push({ id: todoRef.id, ...todoData });
                 });
             }
         });
 
-        await batch.commit();
-        console.log("✅ Firestore 저장 완료");
+        // ⭐️ 4. 실제 DB에 물리적으로 커밋 (가장 중요)
+        if (savedTodos.length === 0) {
+            throw new Error("저장할 데이터가 생성되지 않았습니다.");
+        }
 
+        await batch.commit();
+        console.log(`✅ [Firestore] ${userID || 'test_user_1'}의 할 일 ${savedTodos.length}개 저장 완료!`);
+
+        // 5. 성공 응답 전송
         return res.status(200).json({
             success: true,
-            message: "AI 추천 할 일이 생성되어 DB에 저장되었습니다.",
+            message: "AI 플랜이 생성되어 DB에 저장되었습니다.",
             data: savedTodos 
         });
 
     } catch (error) {
-        console.error("❌ AI Controller Error:", error.message);
+        // 상세 에러 로그 출력 (터미널에서 확인 가능)
+        console.error("❌ [AI Controller 에러 발생]:", error);
         return res.status(500).json({
             success: false,
-            message: "AI 플랜 생성 중 문제가 발생했습니다.",
+            message: "AI 플랜 생성 또는 저장 중 오류가 발생했습니다.",
             error: error.message
         });
     }

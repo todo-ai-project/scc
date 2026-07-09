@@ -1,19 +1,32 @@
 //backend>src>controllers>goalController.js
 const { db } = require('../config/firebase');
 
+exports.getGoals = async (req, res) => {
+  try {
+    const snapshot = await db.collection('goals').get();
+    const goals = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    res.status(200).json({ success: true, data: goals });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 exports.createGoal = async (req, res) => {
   try {
-    const { content, deadline, userID } = req.body; // 클라이언트가 보낸 데이터
+    const { content, deadline, userID } = req.body;
 
     const newGoal = {
-      content,
-      deadline: new Date(deadline), // 문자열로 들어온 날짜를 Date 객체로 변환
+      goalName: content,
+      deadline: deadline ? new Date(deadline) : null,
       createdAt: new Date(),
-      userID: userID || "anon_user_default" // 유저 ID가 없으면 기본값
+      userID: userID || "anon_user_default"
     };
 
     const docRef = await db.collection('goals').add(newGoal);
-    
+
     res.status(201).json({
       success: true,
       id: docRef.id,
